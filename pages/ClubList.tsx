@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { Search, Plus, Users, Lock, Unlock } from 'lucide-react';
+import { Search, Plus, Users, Lock, Unlock, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const ClubList = () => {
@@ -19,7 +19,8 @@ export const ClubList = () => {
     c.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleJoin = (clubId: string) => {
+  const handleJoin = (e: React.MouseEvent, clubId: string) => {
+    e.stopPropagation();
     if (!user) {
       navigate('/auth');
       return;
@@ -72,9 +73,13 @@ export const ClubList = () => {
         {filteredClubs.map(club => {
           const isMember = user?.joinedClubIds.includes(club.id);
           return (
-            <div key={club.id} className="bg-white rounded-xl shadow-sm border border-stone-100 overflow-hidden flex flex-col h-full">
-              <div className="h-40 relative">
-                <img src={club.imageUrl} alt={club.name} className="w-full h-full object-cover" />
+            <div 
+              key={club.id} 
+              className="bg-white rounded-xl shadow-sm border border-stone-100 overflow-hidden flex flex-col h-full cursor-pointer hover:shadow-md transition-all group"
+              onClick={() => navigate(`/clubs/${club.id}`)}
+            >
+              <div className="h-40 relative overflow-hidden">
+                <img src={club.imageUrl} alt={club.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-sm">
                   {club.isPrivate ? <Lock size={16} className="text-stone-600"/> : <Unlock size={16} className="text-stone-600"/>}
                 </div>
@@ -91,21 +96,19 @@ export const ClubList = () => {
                     <Users size={16} className="mr-1" />
                     <span>{club.memberIds.length} members</span>
                   </div>
-                  {isMember ? (
-                    <button 
-                      onClick={() => navigate(`/clubs/${club.id}`)}
-                      className="text-book-accent text-sm font-semibold hover:text-stone-800"
-                    >
-                      View Club
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => handleJoin(club.id)}
-                      className="bg-stone-800 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-stone-700 transition-colors"
-                    >
-                      Join Club
-                    </button>
-                  )}
+                  <div className="flex gap-2">
+                    {!isMember && (
+                      <button 
+                        onClick={(e) => handleJoin(e, club.id)}
+                        className="bg-stone-800 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-stone-700 transition-colors"
+                      >
+                        Join
+                      </button>
+                    )}
+                    <span className="flex items-center text-stone-400 group-hover:text-book-accent transition-colors">
+                      <ArrowRight size={20} />
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

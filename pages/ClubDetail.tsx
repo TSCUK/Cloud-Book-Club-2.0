@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, Navigate, useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon } from 'lucide-react';
+import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, Lock, LogIn } from 'lucide-react';
 import { generateDiscussionQuestions, summarizeChapter } from '../services/geminiService';
 import { DiscussionThread } from '../types';
 
 export const ClubDetail = () => {
   const { clubId } = useParams();
-  const { clubs, books, user, discussions, addDiscussionPost, progress, updateProgress } = useAppContext();
+  const { clubs, books, user, discussions, addDiscussionPost, progress, updateProgress, joinClub } = useAppContext();
   const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'books'>('overview');
+  const navigate = useNavigate();
   
   // AI States
   const [isGenerating, setIsGenerating] = useState(false);
@@ -24,6 +25,7 @@ export const ClubDetail = () => {
   
   if (!club) return <Navigate to="/clubs" />;
 
+  const isMember = user?.joinedClubIds.includes(club.id);
   const currentBook = club.currentBookId ? books[club.currentBookId] : null;
   const clubDiscussions = discussions.filter(d => d.clubId === club.id);
   const userProgress = currentBook && user ? progress.find(p => p.bookId === currentBook.id && p.userId === user.id) : null;
@@ -47,17 +49,29 @@ export const ClubDetail = () => {
 
   const handlePostComment = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+        navigate('/auth');
+        return;
+    }
     if (!selectedThreadId || !newComment.trim()) return;
     addDiscussionPost(selectedThreadId, newComment);
     setNewComment('');
   };
 
   const handleProgressUpdate = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!currentBook) return;
+    if (!currentBook || !user) return;
     const page = parseInt(e.target.value);
     if (!isNaN(page) && page >= 0 && page <= currentBook.pageCount) {
         updateProgress(currentBook.id, club.id, page, currentBook.pageCount);
     }
+  }
+
+  const handleJoinClub = () => {
+      if (!user) {
+          navigate('/auth');
+          return;
+      }
+      joinClub(club.id);
   }
 
   return (
@@ -67,33 +81,43 @@ export const ClubDetail = () => {
         <div className="h-48 relative">
            <img src={club.imageUrl} alt={club.name} className="w-full h-full object-cover" />
            <div className="absolute inset-0 bg-black/40 flex items-end">
-             <div className="p-6 text-white w-full">
-                <h1 className="text-3xl font-serif font-bold mb-2">{club.name}</h1>
-                <div className="flex items-center space-x-4 text-sm font-medium">
-                  <span className="bg-white/20 px-3 py-1 rounded backdrop-blur-md">{club.category}</span>
-                  <span className="flex items-center"><UsersIcon className="w-4 h-4 mr-1"/> {club.memberIds.length} Members</span>
+             <div className="p-6 text-white w-full flex justify-between items-end">
+                <div>
+                    <h1 className="text-3xl font-serif font-bold mb-2">{club.name}</h1>
+                    <div className="flex items-center space-x-4 text-sm font-medium">
+                        <span className="bg-white/20 px-3 py-1 rounded backdrop-blur-md">{club.category}</span>
+                        <span className="flex items-center"><UsersIcon className="w-4 h-4 mr-1"/> {club.memberIds.length} Members</span>
+                    </div>
                 </div>
+                {!isMember && (
+                    <button 
+                        onClick={handleJoinClub}
+                        className="bg-book-accent text-white px-6 py-2 rounded-lg font-semibold hover:bg-stone-800 transition-colors shadow-lg"
+                    >
+                        {user ? 'Join Club' : 'Join to Participate'}
+                    </button>
+                )}
              </div>
            </div>
         </div>
         
         {/* Tabs */}
-        <div className="flex border-b border-stone-200 px-6">
+        <div className="flex border-b border-stone-200 px-6 overflow-x-auto">
           <button 
             onClick={() => setActiveTab('overview')}
-            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'overview' ? 'border-book-accent text-book-accent' : 'border-transparent text-stone-500 hover:text-stone-800'}`}
+            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'overview' ? 'border-book-accent text-book-accent' : 'border-transparent text-stone-500 hover:text-stone-800'}`}
           >
             Overview
           </button>
           <button 
              onClick={() => setActiveTab('discussion')}
-            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'discussion' ? 'border-book-accent text-book-accent' : 'border-transparent text-stone-500 hover:text-stone-800'}`}
+            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'discussion' ? 'border-book-accent text-book-accent' : 'border-transparent text-stone-500 hover:text-stone-800'}`}
           >
             Discussion Board
           </button>
            <button 
              onClick={() => setActiveTab('books')}
-            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${activeTab === 'books' ? 'border-book-accent text-book-accent' : 'border-transparent text-stone-500 hover:text-stone-800'}`}
+            className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'books' ? 'border-book-accent text-book-accent' : 'border-transparent text-stone-500 hover:text-stone-800'}`}
           >
             Books & Voting
           </button>
@@ -124,16 +148,18 @@ export const ClubDetail = () => {
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-100">
                    <div className="flex justify-between items-center mb-6">
                       <h2 className="font-serif text-xl font-bold text-stone-800">Current Read</h2>
-                      <div className="flex space-x-2">
-                        <button 
-                            onClick={handleGenerateQuestions}
-                            disabled={isGenerating}
-                            className="flex items-center text-xs font-semibold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors"
-                        >
-                            <Sparkles size={14} className="mr-1" />
-                            {isGenerating ? 'Thinking...' : 'Ask AI for Topics'}
-                        </button>
-                      </div>
+                      {user && isMember && (
+                          <div className="flex space-x-2">
+                            <button 
+                                onClick={handleGenerateQuestions}
+                                disabled={isGenerating}
+                                className="flex items-center text-xs font-semibold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors"
+                            >
+                                <Sparkles size={14} className="mr-1" />
+                                {isGenerating ? 'Thinking...' : 'Ask AI for Topics'}
+                            </button>
+                          </div>
+                      )}
                    </div>
                    
                    <div className="flex gap-6">
@@ -144,22 +170,31 @@ export const ClubDetail = () => {
                          <p className="text-sm text-stone-600 mb-6">{currentBook.description}</p>
                          
                          {/* Progress Bar */}
-                         <div className="bg-stone-50 p-4 rounded-lg border border-stone-100">
-                            <label className="text-xs font-bold text-stone-500 uppercase block mb-2">Your Progress</label>
-                            <div className="flex items-center gap-4">
-                               <input 
-                                  type="range" 
-                                  min="0" 
-                                  max={currentBook.pageCount} 
-                                  value={userProgress?.currentPage || 0}
-                                  onChange={handleProgressUpdate}
-                                  className="flex-1 h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-book-accent"
-                               />
-                               <span className="text-sm font-medium text-stone-700 w-24 text-right">
-                                  {userProgress?.currentPage || 0} / {currentBook.pageCount}
-                               </span>
-                            </div>
-                         </div>
+                         {user && isMember ? (
+                             <div className="bg-stone-50 p-4 rounded-lg border border-stone-100">
+                                <label className="text-xs font-bold text-stone-500 uppercase block mb-2">Your Progress</label>
+                                <div className="flex items-center gap-4">
+                                   <input 
+                                      type="range" 
+                                      min="0" 
+                                      max={currentBook.pageCount} 
+                                      value={userProgress?.currentPage || 0}
+                                      onChange={handleProgressUpdate}
+                                      className="flex-1 h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-book-accent"
+                                   />
+                                   <span className="text-sm font-medium text-stone-700 w-24 text-right">
+                                      {userProgress?.currentPage || 0} / {currentBook.pageCount}
+                                   </span>
+                                </div>
+                             </div>
+                         ) : (
+                             <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 text-center">
+                                 <p className="text-stone-500 text-sm mb-2">Join this club to track your reading progress</p>
+                                 <button onClick={handleJoinClub} className="text-book-accent text-sm font-semibold hover:underline">
+                                     {user ? 'Join Club' : 'Log in to Join'}
+                                 </button>
+                             </div>
+                         )}
                       </div>
                    </div>
 
@@ -197,7 +232,11 @@ export const ClubDetail = () => {
             <div className="space-y-6">
               <div className="flex justify-between items-center">
                  <h2 className="font-serif text-xl font-bold text-stone-800">Club Discussions</h2>
-                 <button className="text-sm bg-book-accent text-white px-3 py-1.5 rounded-lg hover:bg-stone-800">New Thread</button>
+                 {user && isMember ? (
+                     <button className="text-sm bg-book-accent text-white px-3 py-1.5 rounded-lg hover:bg-stone-800">New Thread</button>
+                 ) : (
+                     <span className="text-xs bg-stone-100 text-stone-500 px-2 py-1 rounded">Members only</span>
+                 )}
               </div>
 
               {selectedThreadId ? (
@@ -229,10 +268,15 @@ export const ClubDetail = () => {
                          type="text" 
                          value={newComment} 
                          onChange={(e) => setNewComment(e.target.value)}
-                         placeholder="Type a message..."
-                         className="flex-1 px-4 py-2 bg-stone-50 border border-stone-200 rounded-full focus:outline-none focus:ring-1 focus:ring-book-accent"
+                         placeholder={user && isMember ? "Type a message..." : "Join to participate"}
+                         disabled={!user || !isMember}
+                         className="flex-1 px-4 py-2 bg-stone-50 border border-stone-200 rounded-full focus:outline-none focus:ring-1 focus:ring-book-accent disabled:opacity-50 disabled:cursor-not-allowed"
                       />
-                      <button type="submit" className="p-2 bg-book-accent text-white rounded-full hover:bg-stone-800">
+                      <button 
+                        type="submit" 
+                        disabled={!user || !isMember}
+                        className="p-2 bg-book-accent text-white rounded-full hover:bg-stone-800 disabled:bg-stone-300 disabled:cursor-not-allowed"
+                      >
                          <Send size={18} />
                       </button>
                    </form>
@@ -255,6 +299,11 @@ export const ClubDetail = () => {
                           </div>
                        </button>
                     ))}
+                    {clubDiscussions.length === 0 && (
+                        <div className="text-center py-10 text-stone-500 italic">
+                            No discussions yet. Be the first to start one!
+                        </div>
+                    )}
                  </div>
               )}
             </div>
@@ -277,7 +326,9 @@ export const ClubDetail = () => {
            <div className="bg-white p-5 rounded-xl shadow-sm border border-stone-100">
               <h3 className="font-bold text-stone-800 mb-3 text-sm uppercase tracking-wide">Club Admin</h3>
               <div className="flex items-center gap-3">
-                 <img src={clubs.find(c => c.id === club.id)?.adminId && books ? 'https://picsum.photos/100/100?random=11' : ''} className="w-10 h-10 rounded-full bg-stone-200" /> 
+                 <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-400">
+                    <UsersIcon className="w-6 h-6" />
+                 </div>
                  {/* Note: In real app, fetch admin user details. Using placeholder for simplification */}
                  <div>
                     <p className="font-medium text-sm">Club Administrator</p>
@@ -293,26 +344,39 @@ export const ClubDetail = () => {
                    <Sparkles className="text-indigo-600" size={18} />
                    <h3 className="font-bold text-indigo-900 text-sm uppercase">AI Study Buddy</h3>
                 </div>
-                <p className="text-xs text-indigo-800 mb-4">
-                   Need a quick refresher? Ask Gemini to summarize a chapter for you.
-                </p>
-                <div className="flex gap-2">
-                   <input 
-                      type="number" 
-                      min="1"
-                      value={summaryChapter}
-                      onChange={(e) => setSummaryChapter(e.target.value)}
-                      placeholder="Ch#"
-                      className="w-16 px-2 py-1 text-sm border border-indigo-200 rounded text-center"
-                   />
-                   <button 
-                      onClick={handleSummarize}
-                      disabled={isGenerating}
-                      className="flex-1 bg-indigo-600 text-white text-xs font-semibold py-1.5 rounded hover:bg-indigo-700 disabled:opacity-50"
-                   >
-                      Summarize
-                   </button>
-                </div>
+                {user && isMember ? (
+                    <>
+                        <p className="text-xs text-indigo-800 mb-4">
+                        Need a quick refresher? Ask Gemini to summarize a chapter for you.
+                        </p>
+                        <div className="flex gap-2">
+                        <input 
+                            type="number" 
+                            min="1"
+                            value={summaryChapter}
+                            onChange={(e) => setSummaryChapter(e.target.value)}
+                            placeholder="Ch#"
+                            className="w-16 px-2 py-1 text-sm border border-indigo-200 rounded text-center"
+                        />
+                        <button 
+                            onClick={handleSummarize}
+                            disabled={isGenerating}
+                            className="flex-1 bg-indigo-600 text-white text-xs font-semibold py-1.5 rounded hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                            Summarize
+                        </button>
+                        </div>
+                    </>
+                ) : (
+                    <div className="text-center">
+                         <p className="text-xs text-indigo-800 mb-3">
+                            Join the club to unlock AI-powered chapter summaries and discussion questions.
+                        </p>
+                        <button onClick={handleJoinClub} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center justify-center gap-1 mx-auto">
+                            <LogIn size={14} /> Join Now
+                        </button>
+                    </div>
+                )}
              </div>
            )}
         </div>

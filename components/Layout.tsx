@@ -1,27 +1,33 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { BookOpen, Home, Users, UserCircle, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, Home, Users, UserCircle, LogOut, Menu, X, Lock } from 'lucide-react';
 
-export const Layout = ({ children }: { children: React.ReactNode }) => {
+export const Layout = ({ children }: { children?: React.ReactNode }) => {
   const { user, logout } = useAppContext();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
-  const NavItem = ({ to, icon: Icon, label }: { to: string, icon: any, label: string }) => {
+  const NavItem = ({ to, icon: Icon, label, protectedRoute = false }: { to: string, icon: any, label: string, protectedRoute?: boolean }) => {
     const isActive = location.pathname.startsWith(to);
+    const isLocked = protectedRoute && !user;
+    
     return (
       <Link 
         to={to} 
-        className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+        title={isLocked ? "Login required" : label}
+        className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors group ${
           isActive 
             ? 'bg-book-accent text-white shadow-md' 
             : 'text-stone-600 hover:bg-stone-200'
-        }`}
+        } ${isLocked ? 'opacity-60 hover:opacity-100 hover:bg-stone-100' : ''}`}
         onClick={() => setIsMobileMenuOpen(false)}
       >
-        <Icon size={20} />
-        <span className="font-medium">{label}</span>
+        <div className="flex items-center space-x-3">
+            <Icon size={20} className={isActive ? 'text-white' : 'text-stone-500 group-hover:text-stone-700'} />
+            <span className="font-medium">{label}</span>
+        </div>
+        {isLocked && <Lock size={14} className="text-stone-400" />}
       </Link>
     );
   };
@@ -51,26 +57,40 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-2">
-          <NavItem to="/dashboard" icon={Home} label="Dashboard" />
+          <NavItem to="/dashboard" icon={Home} label="Dashboard" protectedRoute={true} />
           <NavItem to="/clubs" icon={Users} label="Find Clubs" />
-          <NavItem to="/profile" icon={UserCircle} label="Profile" />
+          <NavItem to="/profile" icon={UserCircle} label="Profile" protectedRoute={true} />
         </nav>
 
         <div className="p-4 border-t border-stone-100">
-          <div className="flex items-center space-x-3 mb-4 px-4">
-             <img src={user?.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover" />
-             <div className="overflow-hidden">
-               <p className="text-sm font-semibold truncate">{user?.name}</p>
-               <p className="text-xs text-stone-500 truncate">{user?.email}</p>
+          {user ? (
+              <>
+                <div className="flex items-center space-x-3 mb-4 px-4">
+                    <img src={user.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover bg-stone-200" />
+                    <div className="overflow-hidden">
+                    <p className="text-sm font-semibold truncate text-stone-800">{user.name}</p>
+                    <p className="text-xs text-stone-500 truncate">{user.email}</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={logout}
+                    className="flex items-center space-x-3 px-4 py-2 w-full text-stone-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                    <LogOut size={20} />
+                    <span>Logout</span>
+                </button>
+              </>
+          ) : (
+             <div className="px-4">
+                 <Link 
+                    to="/auth"
+                    className="flex items-center justify-center w-full bg-book-accent text-white py-2 rounded-lg font-semibold hover:bg-stone-800 transition-colors shadow-sm"
+                 >
+                     Login / Join
+                 </Link>
+                 <p className="text-xs text-center text-stone-400 mt-2">Sign in to manage clubs</p>
              </div>
-          </div>
-          <button 
-            onClick={logout}
-            className="flex items-center space-x-3 px-4 py-2 w-full text-stone-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-          >
-            <LogOut size={20} />
-            <span>Logout</span>
-          </button>
+          )}
         </div>
       </aside>
 

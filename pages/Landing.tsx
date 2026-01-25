@@ -28,7 +28,7 @@ export const Landing = () => {
           <Link to="/auth" className="bg-book-accent text-white px-8 py-3 rounded-full font-semibold hover:bg-stone-800 transition-colors shadow-lg">
             Get Started
           </Link>
-          <Link to="/auth" className="bg-white text-stone-800 border border-stone-200 px-8 py-3 rounded-full font-semibold hover:bg-stone-50 transition-colors">
+          <Link to="/clubs" className="bg-white text-stone-800 border border-stone-200 px-8 py-3 rounded-full font-semibold hover:bg-stone-50 transition-colors">
             Browse Clubs
           </Link>
         </div>
