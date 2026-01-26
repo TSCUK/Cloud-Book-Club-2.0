@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useParams, Navigate, useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, Lock, LogIn } from 'lucide-react';
-import { generateDiscussionQuestions, summarizeChapter } from '../services/geminiService';
+import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, Lock, LogIn, Lightbulb } from 'lucide-react';
+import { fetchContextualTopics, fetchChapterSynopsis } from '../services/contentEngine';
 import { DiscussionThread } from '../types';
 
 export const ClubDetail = () => {
@@ -11,11 +11,11 @@ export const ClubDetail = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'books'>('overview');
   const navigate = useNavigate();
   
-  // AI States
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [aiQuestions, setAiQuestions] = useState<string[] | null>(null);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [summaryChapter, setSummaryChapter] = useState('1');
+  // Insight Engine States
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [insightTopics, setInsightTopics] = useState<string[] | null>(null);
+  const [synopsis, setSynopsis] = useState<string | null>(null);
+  const [sectionRef, setSectionRef] = useState('1');
 
   // Discussion State
   const [newComment, setNewComment] = useState('');
@@ -30,21 +30,21 @@ export const ClubDetail = () => {
   const clubDiscussions = discussions.filter(d => d.clubId === club.id);
   const userProgress = currentBook && user ? progress.find(p => p.bookId === currentBook.id && p.userId === user.id) : null;
 
-  // AI Handler
-  const handleGenerateQuestions = async () => {
+  // Data Handlers
+  const handleFetchInsights = async () => {
     if (!currentBook) return;
-    setIsGenerating(true);
-    const questions = await generateDiscussionQuestions(currentBook.title, currentBook.author);
-    setAiQuestions(questions);
-    setIsGenerating(false);
+    setIsProcessing(true);
+    const topics = await fetchContextualTopics(currentBook.title, currentBook.author);
+    setInsightTopics(topics);
+    setIsProcessing(false);
   };
 
-  const handleSummarize = async () => {
+  const handleFetchSynopsis = async () => {
     if (!currentBook) return;
-    setIsGenerating(true);
-    const result = await summarizeChapter(currentBook.title, summaryChapter);
-    setSummary(result);
-    setIsGenerating(false);
+    setIsProcessing(true);
+    const result = await fetchChapterSynopsis(currentBook.title, sectionRef);
+    setSynopsis(result);
+    setIsProcessing(false);
   }
 
   const handlePostComment = (e: React.FormEvent) => {
@@ -151,12 +151,12 @@ export const ClubDetail = () => {
                       {user && isMember && (
                           <div className="flex space-x-2">
                             <button 
-                                onClick={handleGenerateQuestions}
-                                disabled={isGenerating}
+                                onClick={handleFetchInsights}
+                                disabled={isProcessing}
                                 className="flex items-center text-xs font-semibold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition-colors"
                             >
-                                <Sparkles size={14} className="mr-1" />
-                                {isGenerating ? 'Thinking...' : 'Ask AI for Topics'}
+                                <Lightbulb size={14} className="mr-1" />
+                                {isProcessing ? 'Analyzing...' : 'Generate Topics'}
                             </button>
                           </div>
                       )}
@@ -198,27 +198,27 @@ export const ClubDetail = () => {
                       </div>
                    </div>
 
-                   {/* AI Output Section */}
-                   {(aiQuestions || summary) && (
+                   {/* Output Section */}
+                   {(insightTopics || synopsis) && (
                       <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-lg">
                         <div className="flex items-center gap-2 mb-3">
                             <Sparkles className="text-indigo-600" size={18} />
-                            <h4 className="font-bold text-indigo-900">AI Insights</h4>
+                            <h4 className="font-bold text-indigo-900">Content Analysis</h4>
                         </div>
                         
-                        {aiQuestions && (
+                        {insightTopics && (
                            <div className="mb-4">
-                               <p className="text-xs font-bold text-indigo-400 uppercase mb-2">Discussion Starters</p>
+                               <p className="text-xs font-bold text-indigo-400 uppercase mb-2">Key Discussion Vectors</p>
                                <ul className="list-disc pl-5 space-y-2 text-sm text-indigo-900">
-                                   {aiQuestions.map((q, i) => <li key={i}>{q}</li>)}
+                                   {insightTopics.map((q, i) => <li key={i}>{q}</li>)}
                                </ul>
                            </div>
                         )}
                         
-                         {summary && (
+                         {synopsis && (
                            <div>
-                               <p className="text-xs font-bold text-indigo-400 uppercase mb-2">Chapter Summary</p>
-                               <p className="text-sm text-indigo-900">{summary}</p>
+                               <p className="text-xs font-bold text-indigo-400 uppercase mb-2">Section Synopsis</p>
+                               <p className="text-sm text-indigo-900">{synopsis}</p>
                            </div>
                         )}
                       </div>
@@ -337,40 +337,40 @@ export const ClubDetail = () => {
               </div>
            </div>
 
-           {/* AI Helper Sidebar */}
+           {/* Content Assistant Sidebar */}
            {currentBook && (
              <div className="bg-gradient-to-br from-indigo-50 to-white p-5 rounded-xl shadow-sm border border-indigo-100">
                 <div className="flex items-center gap-2 mb-4">
-                   <Sparkles className="text-indigo-600" size={18} />
-                   <h3 className="font-bold text-indigo-900 text-sm uppercase">AI Study Buddy</h3>
+                   <Lightbulb className="text-indigo-600" size={18} />
+                   <h3 className="font-bold text-indigo-900 text-sm uppercase">Smart Assistant</h3>
                 </div>
                 {user && isMember ? (
                     <>
                         <p className="text-xs text-indigo-800 mb-4">
-                        Need a quick refresher? Ask Gemini to summarize a chapter for you.
+                        Need a quick refresh? Get a synopsis of specific sections.
                         </p>
                         <div className="flex gap-2">
                         <input 
                             type="number" 
                             min="1"
-                            value={summaryChapter}
-                            onChange={(e) => setSummaryChapter(e.target.value)}
+                            value={sectionRef}
+                            onChange={(e) => setSectionRef(e.target.value)}
                             placeholder="Ch#"
                             className="w-16 px-2 py-1 text-sm border border-indigo-200 rounded text-center"
                         />
                         <button 
-                            onClick={handleSummarize}
-                            disabled={isGenerating}
+                            onClick={handleFetchSynopsis}
+                            disabled={isProcessing}
                             className="flex-1 bg-indigo-600 text-white text-xs font-semibold py-1.5 rounded hover:bg-indigo-700 disabled:opacity-50"
                         >
-                            Summarize
+                            Get Synopsis
                         </button>
                         </div>
                     </>
                 ) : (
                     <div className="text-center">
                          <p className="text-xs text-indigo-800 mb-3">
-                            Join the club to unlock AI-powered chapter summaries and discussion questions.
+                            Join the club to unlock chapter analysis and discussion tools.
                         </p>
                         <button onClick={handleJoinClub} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center justify-center gap-1 mx-auto">
                             <LogIn size={14} /> Join Now
