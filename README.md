@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-View your app: https://ai.studio/apps/drive/1KSCiP1dcWNCJRgHcPes5XiYBs7083X0N
+View your app: https://cloud-book-club-2-0-alpha.vercel.app/
 
 ## Run Locally
 
