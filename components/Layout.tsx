@@ -66,9 +66,13 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
           {user ? (
               <>
                 <div className="flex items-center space-x-3 mb-4 px-4">
-                    <img src={user.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover bg-stone-200" />
+                    <img 
+                        src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.full_name || 'User'}`} 
+                        alt="Avatar" 
+                        className="w-10 h-10 rounded-full object-cover bg-stone-200" 
+                    />
                     <div className="overflow-hidden">
-                    <p className="text-sm font-semibold truncate text-stone-800">{user.name}</p>
+                    <p className="text-sm font-semibold truncate text-stone-800">{user.full_name || user.email}</p>
                     <p className="text-xs text-stone-500 truncate">{user.email}</p>
                     </div>
                 </div>

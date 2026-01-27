@@ -1,67 +1,89 @@
 export enum UserRole {
   GUEST = 'GUEST',
-  MEMBER = 'MEMBER',
-  ADMIN = 'ADMIN'
+  MEMBER = 'member',
+  ADMIN = 'admin'
 }
 
-export interface User {
+export interface Profile {
   id: string;
-  name: string;
-  email: string;
-  avatarUrl: string;
-  role: UserRole;
-  joinedClubIds: string[];
-}
-
-export interface Book {
-  id: string;
-  title: string;
-  author: string;
-  coverUrl: string;
-  description: string;
-  pageCount: number;
-}
-
-export interface ReadingProgress {
-  userId: string;
-  bookId: string;
-  clubId: string;
-  currentPage: number;
-  status: 'READING' | 'COMPLETED' | 'PLANNED';
-  lastUpdated: string;
-}
-
-export interface DiscussionPost {
-  id: string;
-  userId: string;
-  userName: string;
-  userAvatar: string;
-  content: string;
-  timestamp: string;
-  likes: number;
-  replies?: DiscussionPost[];
-}
-
-export interface DiscussionThread {
-  id: string;
-  bookId: string;
-  clubId: string;
-  title: string;
-  creatorId: string;
-  posts: DiscussionPost[];
-  createdAt: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  email?: string;
+  avatar_url?: string;
+  role?: string;
 }
 
 export interface Club {
-  id: string;
+  club_id: number;
   name: string;
   description: string;
-  adminId: string;
-  isPrivate: boolean;
-  memberIds: string[];
-  currentBookId?: string;
-  bookQueueIds: string[];
+  privacy: 'public' | 'private';
+  created_by: string;
+  created_at: string;
+  image_url: string;
   category: string;
-  nextMeetingDate?: string;
-  imageUrl?: string;
+  // Aggregate fields from joins
+  member_count?: number; 
+}
+
+export interface Book {
+  book_id: number;
+  title: string;
+  author: string;
+  isbn?: string;
+  language?: string;
+  published_year?: number;
+  cover_image_url: string;
+}
+
+export interface ClubRead {
+  club_read_id: number;
+  club_id: number;
+  book_id: number;
+  status: 'planned' | 'reading' | 'completed';
+  start_date?: string;
+  end_date?: string;
+  // Join fields
+  book?: Book;
+}
+
+export interface ReadingProgress {
+  progress_id: number;
+  club_read_id: number;
+  user_id: string;
+  progress_type: 'page' | 'percentage';
+  progress_value: number;
+  updated_at: string;
+}
+
+export interface DiscussionThread {
+  thread_id: number;
+  club_id: number;
+  club_read_id?: number;
+  created_by: string;
+  title: string;
+  is_pinned: boolean;
+  created_at: string;
+  // Join fields
+  profiles?: Profile; // Creator info
+  thread_comments?: { count: number }[]; // For count
+}
+
+export interface ThreadComment {
+  comment_id: number;
+  thread_id: number;
+  user_id: string;
+  content: string;
+  created_at: string;
+  profiles?: Profile;
+}
+
+export interface ClubMember {
+  club_member_id: number;
+  club_id: number;
+  user_id: string;
+  role: string;
+  member_status: string;
+  joined_at: string;
 }

@@ -4,7 +4,7 @@ import { Search, Plus, Users, Lock, Unlock, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const ClubList = () => {
-  const { clubs, joinClub, user, createClub } = useAppContext();
+  const { clubs, joinClub, user, createClub, myClubMemberships } = useAppContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
@@ -16,10 +16,10 @@ export const ClubList = () => {
 
   const filteredClubs = clubs.filter(c => 
     c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.description.toLowerCase().includes(searchTerm.toLowerCase())
+    c.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleJoin = (e: React.MouseEvent, clubId: string) => {
+  const handleJoin = (e: React.MouseEvent, clubId: number) => {
     e.stopPropagation();
     if (!user) {
       navigate('/auth');
@@ -33,7 +33,8 @@ export const ClubList = () => {
     createClub({
       name: newClubName,
       description: newClubDesc,
-      category: newClubCategory
+      category: newClubCategory,
+      image_url: `https://picsum.photos/800/400?random=${Date.now()}` // Temporary placeholder logic
     });
     setIsModalOpen(false);
     setNewClubName('');
@@ -71,17 +72,17 @@ export const ClubList = () => {
       {/* Grid */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredClubs.map(club => {
-          const isMember = user?.joinedClubIds.includes(club.id);
+          const isMember = myClubMemberships.some(m => m.club_id === club.club_id);
           return (
             <div 
-              key={club.id} 
+              key={club.club_id} 
               className="bg-white rounded-xl shadow-sm border border-stone-100 overflow-hidden flex flex-col h-full cursor-pointer hover:shadow-md transition-all group"
-              onClick={() => navigate(`/clubs/${club.id}`)}
+              onClick={() => navigate(`/clubs/${club.club_id}`)}
             >
               <div className="h-40 relative overflow-hidden">
-                <img src={club.imageUrl} alt={club.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <img src={club.image_url || 'https://via.placeholder.com/400'} alt={club.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-sm">
-                  {club.isPrivate ? <Lock size={16} className="text-stone-600"/> : <Unlock size={16} className="text-stone-600"/>}
+                  {club.privacy === 'private' ? <Lock size={16} className="text-stone-600"/> : <Unlock size={16} className="text-stone-600"/>}
                 </div>
               </div>
               <div className="p-5 flex-1 flex flex-col">
@@ -94,12 +95,12 @@ export const ClubList = () => {
                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-stone-100">
                   <div className="flex items-center text-stone-400 text-sm">
                     <Users size={16} className="mr-1" />
-                    <span>{club.memberIds.length} members</span>
+                    <span>{club.member_count || 0} members</span>
                   </div>
                   <div className="flex gap-2">
                     {!isMember && (
                       <button 
-                        onClick={(e) => handleJoin(e, club.id)}
+                        onClick={(e) => handleJoin(e, club.club_id)}
                         className="bg-stone-800 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-stone-700 transition-colors"
                       >
                         Join

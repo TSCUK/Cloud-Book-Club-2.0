@@ -4,23 +4,24 @@ import { BookOpen, Calendar, TrendingUp, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const Dashboard = () => {
-  const { user, clubs, books, progress } = useAppContext();
+  const { user, clubs, myClubMemberships, activeClubReads, progress } = useAppContext();
 
   // Derived data
-  const myClubs = clubs.filter(c => user?.joinedClubIds.includes(c.id));
-  const activeReads = progress.filter(p => p.status === 'READING');
+  const myClubIds = myClubMemberships.map(m => m.club_id);
+  const myClubs = clubs.filter(c => myClubIds.includes(c.club_id));
+  
+  // Find books that I am reading (reads associated with my clubs)
+  const myActiveReads = activeClubReads.filter(read => myClubIds.includes(read.club_id));
 
-  const getBookProgress = (bookId: string) => {
-    const book = books[bookId];
-    const record = progress.find(p => p.bookId === bookId && p.userId === user?.id);
-    if (!book || !record) return 0;
-    return Math.round((record.currentPage / book.pageCount) * 100);
+  const getReadProgress = (clubReadId: number) => {
+    const record = progress.find(p => p.club_read_id === clubReadId);
+    return record ? record.progress_value : 0;
   };
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-serif text-3xl font-bold text-stone-800">Hello, {user?.name.split(' ')[0]}</h1>
+        <h1 className="font-serif text-3xl font-bold text-stone-800">Hello, {user?.full_name?.split(' ')[0] || 'Reader'}</h1>
         <p className="text-stone-500 mt-1">Here is your reading overview for today.</p>
       </div>
 
@@ -38,7 +39,7 @@ export const Dashboard = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-100 flex items-start justify-between">
           <div>
             <p className="text-stone-500 text-sm font-medium">Books in Progress</p>
-            <h3 className="text-3xl font-bold text-stone-800 mt-2">{activeReads.length}</h3>
+            <h3 className="text-3xl font-bold text-stone-800 mt-2">{myActiveReads.length}</h3>
           </div>
           <div className="bg-amber-50 p-3 rounded-lg">
             <BookOpen className="text-amber-600" size={24} />
@@ -46,9 +47,11 @@ export const Dashboard = () => {
         </div>
         <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-100 flex items-start justify-between">
           <div>
-            <p className="text-stone-500 text-sm font-medium">Pages Read</p>
+            <p className="text-stone-500 text-sm font-medium">Avg Progress</p>
             <h3 className="text-3xl font-bold text-stone-800 mt-2">
-              {progress.reduce((acc, curr) => acc + curr.currentPage, 0)}
+              {progress.length > 0 
+                ? Math.round(progress.reduce((acc, curr) => acc + curr.progress_value, 0) / progress.length)
+                : 0}%
             </h3>
           </div>
           <div className="bg-green-50 p-3 rounded-lg">
@@ -60,22 +63,21 @@ export const Dashboard = () => {
       {/* Current Reads Section */}
       <div className="bg-white rounded-xl shadow-sm border border-stone-100 p-6">
         <h2 className="font-serif text-xl font-bold text-stone-800 mb-6">Currently Reading</h2>
-        {activeReads.length > 0 ? (
+        {myActiveReads.length > 0 ? (
           <div className="grid md:grid-cols-2 gap-6">
-            {activeReads.map(record => {
-              const book = books[record.bookId];
-              const percent = getBookProgress(book.id);
+            {myActiveReads.map(read => {
+              const book = read.book!;
+              const percent = getReadProgress(read.club_read_id);
               return (
-                <div key={record.bookId} className="flex gap-4 p-4 rounded-lg bg-stone-50 border border-stone-100">
-                  <img src={book.coverUrl} alt={book.title} className="w-20 h-28 object-cover rounded shadow-sm" />
+                <div key={read.club_read_id} className="flex gap-4 p-4 rounded-lg bg-stone-50 border border-stone-100">
+                  <img src={book.cover_image_url || 'https://via.placeholder.com/150'} alt={book.title} className="w-20 h-28 object-cover rounded shadow-sm" />
                   <div className="flex-1">
                     <h3 className="font-bold text-stone-800">{book.title}</h3>
                     <p className="text-stone-500 text-sm">{book.author}</p>
                     
                     <div className="mt-4">
                       <div className="flex justify-between text-xs text-stone-500 mb-1">
-                        <span>{Math.round((record.currentPage / book.pageCount) * 100)}% Complete</span>
-                        <span>{record.currentPage}/{book.pageCount} Pages</span>
+                        <span>{percent}% Complete</span>
                       </div>
                       <div className="w-full bg-stone-200 rounded-full h-2">
                         <div 
@@ -104,10 +106,10 @@ export const Dashboard = () => {
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {myClubs.map(club => (
-             <Link key={club.id} to={`/clubs/${club.id}`} className="group">
+             <Link key={club.club_id} to={`/clubs/${club.club_id}`} className="group">
                <div className="bg-white rounded-xl shadow-sm border border-stone-100 overflow-hidden hover:shadow-md transition-shadow h-full flex flex-col">
                   <div className="h-32 bg-stone-200 overflow-hidden relative">
-                    <img src={club.imageUrl} alt={club.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <img src={club.image_url || 'https://via.placeholder.com/400'} alt={club.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                     <span className="absolute bottom-3 left-4 text-white text-xs font-bold uppercase tracking-wider bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
                       {club.category}
@@ -118,7 +120,8 @@ export const Dashboard = () => {
                     <p className="text-stone-500 text-sm line-clamp-2 mb-4 flex-1">{club.description}</p>
                     <div className="flex items-center text-xs text-stone-400 mt-auto">
                        <Calendar size={14} className="mr-1" />
-                       <span>Next meeting: {new Date(club.nextMeetingDate!).toLocaleDateString()}</span>
+                       {/* Date not in DB yet, using created_at as placeholder or hidden */}
+                       <span>Joined</span>
                     </div>
                   </div>
                </div>

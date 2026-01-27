@@ -1,128 +1,223 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Club, Book, ReadingProgress, DiscussionThread, UserRole } from '../types';
-import { MOCK_USERS, MOCK_CLUBS, MOCK_BOOKS, MOCK_PROGRESS, MOCK_DISCUSSIONS } from '../constants';
+import { Profile, Club, Book, ReadingProgress, DiscussionThread, ClubMember, ClubRead } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 interface AppContextType {
-  user: User | null;
-  login: (email: string) => void;
-  logout: () => void;
+  user: Profile | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ error?: string }>;
+  signup: (email: string, password: string, name: string) => Promise<{ error?: string }>;
+  logout: () => Promise<void>;
+  
+  // Data
   clubs: Club[];
-  books: Record<string, Book>;
-  progress: ReadingProgress[];
-  discussions: DiscussionThread[];
-  joinClub: (clubId: string) => void;
-  updateProgress: (bookId: string, clubId: string, page: number, total: number) => void;
-  addDiscussionPost: (threadId: string, content: string) => void;
-  createClub: (club: Partial<Club>) => void;
+  myClubMemberships: ClubMember[]; // Tracks which clubs the user joined
+  activeClubReads: ClubRead[]; // Tracks active books for clubs
+  progress: ReadingProgress[]; // Tracks user progress
+  
+  // Actions
+  refreshData: () => Promise<void>;
+  joinClub: (clubId: number) => Promise<void>;
+  updateProgress: (clubReadId: number, value: number) => Promise<void>;
+  createClub: (club: Partial<Club>) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [clubs, setClubs] = useState<Club[]>(MOCK_CLUBS);
-  const [books, setBooks] = useState<Record<string, Book>>(MOCK_BOOKS);
-  const [progress, setProgress] = useState<ReadingProgress[]>(MOCK_PROGRESS);
-  const [discussions, setDiscussions] = useState<DiscussionThread[]>(MOCK_DISCUSSIONS);
+  const [user, setUser] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [myClubMemberships, setMyClubMemberships] = useState<ClubMember[]>([]);
+  const [activeClubReads, setActiveClubReads] = useState<ClubRead[]>([]);
+  const [progress, setProgress] = useState<ReadingProgress[]>([]);
 
-  const login = (email: string) => {
-    // Mock login - just find user by email or default to u1
-    const foundUser = Object.values(MOCK_USERS).find(u => u.email === email) || MOCK_USERS['u1'];
-    setUser(foundUser);
+  // Load User Session
+  useEffect(() => {
+    const initSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await fetchUserProfile(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    };
+
+    initSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await fetchUserProfile(session.user.id);
+      } else {
+        setUser(null);
+        setMyClubMemberships([]);
+        setProgress([]);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch Data when User changes or on load
+  useEffect(() => {
+    refreshData();
+  }, [user]);
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (data) {
+        setUser(data);
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
   };
 
-  const logout = () => {
+  const refreshData = async () => {
+    try {
+      // 1. Fetch Clubs with member counts
+      const { data: clubsData } = await supabase
+        .from('clubs')
+        .select('*, club_members(count)');
+      
+      if (clubsData) {
+        const formattedClubs: Club[] = clubsData.map((c: any) => ({
+          ...c,
+          member_count: c.club_members?.[0]?.count || 0
+        }));
+        setClubs(formattedClubs);
+      }
+
+      // 2. Fetch Active Reads (Books currently being read by clubs)
+      const { data: readsData } = await supabase
+        .from('club_reads')
+        .select('*, books(*)')
+        .eq('status', 'reading');
+      
+      if (readsData) {
+        // Map the nested book object to strict types if needed, or rely on loose matching
+        const mappedReads = readsData.map((r: any) => ({
+            ...r,
+            book: r.books // Supabase returns the relation as a property
+        }));
+        setActiveClubReads(mappedReads);
+      }
+
+      // 3. User Specific Data
+      if (user) {
+        // Memberships
+        const { data: membersData } = await supabase
+          .from('club_members')
+          .select('*')
+          .eq('user_id', user.id);
+        if (membersData) setMyClubMemberships(membersData);
+
+        // Progress
+        const { data: progressData } = await supabase
+          .from('reading_progress')
+          .select('*')
+          .eq('user_id', user.id);
+        if (progressData) setProgress(progressData);
+      }
+
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    return { error: error?.message };
+  };
+
+  const signup = async (email: string, password: string, name: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name } },
+    });
+    return { error: error?.message };
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
   };
 
-  const joinClub = (clubId: string) => {
+  const joinClub = async (clubId: number) => {
     if (!user) return;
     
-    // Update local user state
-    const updatedUser = { ...user, joinedClubIds: [...user.joinedClubIds, clubId] };
-    setUser(updatedUser);
+    const { error } = await supabase
+      .from('club_members')
+      .insert({ club_id: clubId, user_id: user.id });
 
-    // Update club members list
-    setClubs(prev => prev.map(c => {
-      if (c.id === clubId) {
-        return { ...c, memberIds: [...c.memberIds, user.id] };
-      }
-      return c;
-    }));
+    if (!error) {
+      await refreshData();
+    }
   };
 
-  const updateProgress = (bookId: string, clubId: string, page: number, total: number) => {
+  const updateProgress = async (clubReadId: number, value: number) => {
     if (!user) return;
 
-    setProgress(prev => {
-      const existingIdx = prev.findIndex(p => p.userId === user.id && p.bookId === bookId);
-      const newStatus = page >= total ? 'COMPLETED' : 'READING';
-      
-      const newEntry: ReadingProgress = {
-        userId: user.id,
-        bookId,
-        clubId,
-        currentPage: page,
-        status: newStatus,
-        lastUpdated: new Date().toISOString()
-      };
+    const { error } = await supabase
+      .from('reading_progress')
+      .upsert({
+        club_read_id: clubReadId,
+        user_id: user.id,
+        progress_value: value,
+        progress_type: 'percentage', // Defaulting to percentage based on new logic
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'club_read_id,user_id' });
 
-      if (existingIdx >= 0) {
-        const newProg = [...prev];
-        newProg[existingIdx] = newEntry;
-        return newProg;
-      } else {
-        return [...prev, newEntry];
-      }
-    });
+    if (!error) {
+       // Optimistic update
+       setProgress(prev => {
+          const filtered = prev.filter(p => p.club_read_id !== clubReadId);
+          return [...filtered, {
+              progress_id: -1, // temp
+              club_read_id: clubReadId,
+              user_id: user.id,
+              progress_type: 'percentage',
+              progress_value: value,
+              updated_at: new Date().toISOString()
+          }];
+       });
+    }
   };
 
-  const addDiscussionPost = (threadId: string, content: string) => {
-    if (!user) return;
-
-    setDiscussions(prev => prev.map(thread => {
-      if (thread.id === threadId) {
-        return {
-          ...thread,
-          posts: [...thread.posts, {
-            id: `p${Date.now()}`,
-            userId: user.id,
-            userName: user.name,
-            userAvatar: user.avatarUrl,
-            content,
-            timestamp: new Date().toISOString(),
-            likes: 0,
-            replies: []
-          }]
-        };
-      }
-      return thread;
-    }));
-  };
-
-  const createClub = (clubData: Partial<Club>) => {
+  const createClub = async (clubData: Partial<Club>) => {
     if(!user) return;
-    const newClub: Club = {
-        id: `c${Date.now()}`,
-        name: clubData.name || 'New Club',
-        description: clubData.description || '',
-        adminId: user.id,
-        isPrivate: false,
-        memberIds: [user.id],
-        bookQueueIds: [],
-        category: clubData.category || 'General',
-        imageUrl: `https://picsum.photos/800/400?random=${Date.now()}`,
-        ...clubData
-    } as Club;
-    setClubs(prev => [...prev, newClub]);
-    joinClub(newClub.id);
+
+    const { data, error } = await supabase
+        .from('clubs')
+        .insert({
+            ...clubData,
+            created_by: user.id
+        })
+        .select()
+        .single();
+    
+    if (data && !error) {
+        // Auto join creator
+        await joinClub(data.club_id);
+    }
   }
 
   return (
     <AppContext.Provider value={{ 
-      user, login, logout, 
-      clubs, books, progress, discussions,
-      joinClub, updateProgress, addDiscussionPost, createClub
+      user, loading, login, signup, logout, 
+      clubs, myClubMemberships, activeClubReads, progress,
+      refreshData, joinClub, updateProgress, createClub
     }}>
       {children}
     </AppContext.Provider>
