@@ -20,7 +20,7 @@ interface AppContextType {
   joinClub: (clubId: number) => Promise<void>;
   leaveClub: (clubId: number) => Promise<void>;
   updateProgress: (clubReadId: number, value: number) => Promise<void>;
-  createClub: (club: Partial<Club>) => Promise<void>;
+  createClub: (club: Partial<Club>) => Promise<{ error?: string }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error?: string }>;
 }
 
@@ -38,26 +38,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Load User Session
   useEffect(() => {
     const initSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        // Pass session.user to properly attempt auto-healing if profile is missing
-        await fetchUserProfile(session.user);
-      } else {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await fetchUserProfile(session.user);
+        }
+      } catch (e) {
+        console.error("Session init error:", e);
+      } finally {
         setLoading(false);
       }
     };
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        await fetchUserProfile(session.user);
-      } else {
-        // Ensure state is cleared on logout/session expiry
-        setUser(null);
-        setMyClubMemberships([]);
-        setProgress([]);
-        setLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+         setUser(null);
+         setMyClubMemberships([]);
+         setProgress([]);
+      } else if (session?.user && !user) {
+         // Only fetch if we don't have the user yet to avoid double fetching
+         await fetchUserProfile(session.user);
       }
     });
 
@@ -81,11 +83,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUser(data);
       } else if (authUser) {
          // SELF-HEALING: Profile missing but Auth User exists? Create it now.
-         // This fixes the "can't login" issue if the database trigger failed previously.
          const defaultName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User';
-         const defaultAvatar = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${defaultName.replace(/\s+/g, '+')}`;
+         const defaultAvatar = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(defaultName)}`;
          
-         const { data: newProfile, error: insertError } = await supabase
+         const { data: newProfile } = await supabase
             .from('profiles')
             .insert({
                 id: authUser.id,
@@ -149,21 +150,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     } catch (error) {
       console.error("Error fetching data:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    
+    // CRITICAL FIX: Wait for profile fetch before resolving
+    // This prevents the UI from redirecting to Dashboard before User state is ready
+    if (data.session?.user && !error) {
+        await fetchUserProfile(data.session.user);
+    }
+    
     return { error: error?.message };
   };
 
   const signup = async (email: string, password: string, name: string) => {
-    // We generate the avatar URL here for the trigger to use, or the trigger will fallback
-    const avatarUrl = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${name.replace(/\s+/g, '+')}`;
+    const avatarUrl = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(name)}`;
     
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { 
@@ -173,6 +178,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } 
       },
     });
+
+    if (data.session?.user && !error) {
+        await fetchUserProfile(data.session.user);
+    }
+
     return { error: error?.message };
   };
 
@@ -245,7 +255,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createClub = async (clubData: Partial<Club>) => {
-    if(!user) return;
+    if(!user) return { error: "User not logged in" };
 
     const { data, error } = await supabase
         .from('clubs')
@@ -258,8 +268,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     if (data && !error) {
         await joinClub(data.club_id);
+        return {};
     } else {
         console.error("Create club error:", error);
+        return { error: error?.message };
     }
   }
 
