@@ -18,8 +18,10 @@ interface AppContextType {
   // Actions
   refreshData: () => Promise<void>;
   joinClub: (clubId: number) => Promise<void>;
+  leaveClub: (clubId: number) => Promise<void>;
   updateProgress: (clubReadId: number, value: number) => Promise<void>;
   createClub: (club: Partial<Club>) => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<{ error?: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -166,6 +168,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const leaveClub = async (clubId: number) => {
+    if (!user) return;
+    
+    const { error } = await supabase
+      .from('club_members')
+      .delete()
+      .eq('club_id', clubId)
+      .eq('user_id', user.id);
+
+    if (!error) {
+      await refreshData();
+    }
+  };
+
   const updateProgress = async (clubReadId: number, value: number) => {
     if (!user) return;
 
@@ -213,11 +229,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }
 
+  const updateProfile = async (updates: Partial<Profile>) => {
+      if (!user) return { error: "Not logged in" };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+      
+      if (!error) {
+         setUser(prev => prev ? { ...prev, ...updates } : null);
+      }
+      return { error: error?.message };
+  };
+
   return (
     <AppContext.Provider value={{ 
       user, loading, login, signup, logout, 
       clubs, myClubMemberships, activeClubReads, progress,
-      refreshData, joinClub, updateProgress, createClub
+      refreshData, joinClub, leaveClub, updateProgress, createClub, updateProfile
     }}>
       {children}
     </AppContext.Provider>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, LogIn, Lightbulb } from 'lucide-react';
+import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, LogIn, Lightbulb, LogOut } from 'lucide-react';
 import { fetchContextualTopics, fetchChapterSynopsis } from '../services/contentEngine';
 import { DiscussionThread } from '../types';
 import { supabase } from '../lib/supabaseClient';
@@ -10,7 +10,7 @@ export const ClubDetail = () => {
   const { clubId } = useParams();
   const numericClubId = parseInt(clubId || '0');
   
-  const { clubs, user, myClubMemberships, activeClubReads, progress, updateProgress, joinClub } = useAppContext();
+  const { clubs, user, myClubMemberships, activeClubReads, progress, updateProgress, joinClub, leaveClub } = useAppContext();
   const [activeTab, setActiveTab] = useState<'overview' | 'discussion' | 'books'>('overview');
   const navigate = useNavigate();
   
@@ -146,14 +146,28 @@ export const ClubDetail = () => {
                         <span className="flex items-center"><UsersIcon className="w-4 h-4 mr-1"/> {club.member_count} Members</span>
                     </div>
                 </div>
-                {!isMember && (
-                    <button 
-                        onClick={() => joinClub(club.club_id)}
-                        className="bg-book-accent text-white px-6 py-2 rounded-lg font-semibold hover:bg-stone-800 transition-colors shadow-lg"
-                    >
-                        {user ? 'Join Club' : 'Join to Participate'}
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {isMember && (
+                        <button
+                            onClick={() => {
+                                if(confirm('Are you sure you want to leave this club?')) {
+                                    leaveClub(club.club_id);
+                                }
+                            }}
+                            className="bg-stone-500/80 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition-colors shadow-lg flex items-center text-sm"
+                        >
+                            <LogOut size={16} className="mr-1"/> Leave
+                        </button>
+                    )}
+                    {!isMember && (
+                        <button 
+                            onClick={() => joinClub(club.club_id)}
+                            className="bg-book-accent text-white px-6 py-2 rounded-lg font-semibold hover:bg-stone-800 transition-colors shadow-lg"
+                        >
+                            {user ? 'Join Club' : 'Join to Participate'}
+                        </button>
+                    )}
+                </div>
              </div>
            </div>
         </div>

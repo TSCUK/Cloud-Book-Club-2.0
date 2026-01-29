@@ -1,14 +1,24 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { Save, X, Edit2 } from 'lucide-react';
 
 export const Profile = () => {
-  const { user, progress, myClubMemberships } = useAppContext();
+  const { user, progress, myClubMemberships, updateProfile } = useAppContext();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(user?.full_name || '');
+  const [isSaving, setIsSaving] = useState(false);
 
   if (!user) return null;
 
-  // Assuming progress_value of 100 or status means finished. SQL has progress_type.
-  // We'll simplisticly count items in progress table for now or assume 100% is done.
+  // Assuming progress_value of 100 or status means finished.
   const finishedBooks = progress.filter(p => p.progress_value === 100).length;
+
+  const handleSave = async () => {
+      setIsSaving(true);
+      await updateProfile({ full_name: editName });
+      setIsSaving(false);
+      setIsEditing(false);
+  };
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -20,16 +30,53 @@ export const Profile = () => {
           </div>
           
           <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl font-serif font-bold text-stone-800">{user.full_name}</h1>
+            <div className="flex-1">
+              {isEditing ? (
+                  <div className="flex items-center gap-2 max-w-sm mb-2">
+                      <input 
+                        type="text" 
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="px-3 py-2 border rounded-lg w-full text-2xl font-serif font-bold text-stone-800 focus:ring-2 focus:ring-book-accent outline-none"
+                      />
+                  </div>
+              ) : (
+                 <h1 className="text-2xl font-serif font-bold text-stone-800">{user.full_name}</h1>
+              )}
+              
               <p className="text-stone-500">{user.email}</p>
               <span className="inline-block mt-2 bg-stone-100 text-stone-600 text-xs px-2 py-1 rounded">
                 {user.role || 'Reader'}
               </span>
             </div>
-            <button className="px-4 py-2 border border-stone-300 rounded-lg text-sm font-medium hover:bg-stone-50">
-              Edit Profile
-            </button>
+            
+            {isEditing ? (
+                 <div className="flex gap-2">
+                    <button 
+                        onClick={() => setIsEditing(false)}
+                        className="px-4 py-2 border border-stone-300 rounded-lg text-sm font-medium hover:bg-stone-50 flex items-center gap-2"
+                    >
+                        <X size={16} /> Cancel
+                    </button>
+                    <button 
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-book-accent text-white rounded-lg text-sm font-medium hover:bg-stone-800 flex items-center gap-2"
+                    >
+                        <Save size={16} /> {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                 </div>
+            ) : (
+                <button 
+                    onClick={() => {
+                        setEditName(user.full_name || '');
+                        setIsEditing(true);
+                    }}
+                    className="px-4 py-2 border border-stone-300 rounded-lg text-sm font-medium hover:bg-stone-50 flex items-center gap-2"
+                >
+                    <Edit2 size={16} /> Edit Profile
+                </button>
+            )}
           </div>
         </div>
       </div>

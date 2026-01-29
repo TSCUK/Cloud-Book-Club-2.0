@@ -7,6 +7,7 @@ export const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -18,6 +19,12 @@ export const Auth = () => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
+
+    if (!isLogin && password !== confirmPassword) {
+        setError("Passwords do not match");
+        setIsLoading(false);
+        return;
+    }
 
     try {
       let result;
@@ -102,6 +109,21 @@ export const Auth = () => {
             />
           </div>
 
+          {!isLogin && (
+             <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  className="w-full px-4 py-2 rounded-lg border border-stone-300 focus:ring-2 focus:ring-book-accent focus:border-transparent outline-none transition-all"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+            </div>
+          )}
+
           <div className="pt-2">
              <button
               type="submit"
@@ -118,6 +140,8 @@ export const Auth = () => {
             onClick={() => {
                 setIsLogin(!isLogin);
                 setError(null);
+                setConfirmPassword('');
+                setPassword('');
             }}
             className="text-stone-500 hover:text-book-accent text-sm font-medium"
           >
