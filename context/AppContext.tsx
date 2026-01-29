@@ -5,8 +5,8 @@ import { supabase } from '../lib/supabaseClient';
 interface AppContextType {
   user: Profile | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ error?: string }>;
-  signup: (email: string, password: string, name: string) => Promise<{ error?: string }>;
+  login: (email: string, password: string) => Promise<{ error?: string, data?: any }>;
+  signup: (email: string, password: string, name: string) => Promise<{ error?: string, data?: any }>;
   logout: () => Promise<void>;
   
   // Data
@@ -86,7 +86,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
          const defaultName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User';
          const defaultAvatar = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(defaultName)}`;
          
-         const { data: newProfile } = await supabase
+         const { data: newProfile, error: insertError } = await supabase
             .from('profiles')
             .insert({
                 id: authUser.id,
@@ -98,6 +98,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             .single();
         
         if (newProfile) setUser(newProfile);
+        if (insertError) console.error("Auto-creation of profile failed. Check DB triggers/policies.", insertError);
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -154,36 +155,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const login = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    
-    // CRITICAL FIX: Wait for profile fetch before resolving
-    // This prevents the UI from redirecting to Dashboard before User state is ready
-    if (data.session?.user && !error) {
-        await fetchUserProfile(data.session.user);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      
+      if (error) return { error: error.message };
+      
+      // Fix race condition: Wait for profile fetch before resolving
+      if (data.session?.user) {
+          await fetchUserProfile(data.session.user);
+      }
+      
+      return { data };
+    } catch (e) {
+      console.error("Login exception:", e);
+      return { error: "An unexpected error occurred during login." };
     }
-    
-    return { error: error?.message };
   };
 
   const signup = async (email: string, password: string, name: string) => {
-    const avatarUrl = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(name)}`;
-    
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { 
-          data: { 
-              full_name: name,
-              avatar_url: avatarUrl
-          } 
-      },
-    });
+    try {
+      const avatarUrl = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(name)}`;
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { 
+            data: { 
+                full_name: name,
+                avatar_url: avatarUrl
+            } 
+        },
+      });
 
-    if (data.session?.user && !error) {
-        await fetchUserProfile(data.session.user);
+      if (error) return { error: error.message };
+
+      if (data.session?.user) {
+          await fetchUserProfile(data.session.user);
+      }
+
+      return { data };
+    } catch (e) {
+      console.error("Signup exception:", e);
+      return { error: "An unexpected error occurred during signup." };
     }
-
-    return { error: error?.message };
   };
 
   const logout = async () => {

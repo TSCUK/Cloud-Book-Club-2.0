@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { useNavigate } from 'react-router-dom';
-import { BookOpen, AlertCircle, Loader } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { BookOpen, AlertCircle, Loader, ArrowLeft } from 'lucide-react';
 
 export const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -10,6 +10,7 @@ export const Auth = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   
   const { login, signup } = useAppContext();
@@ -18,6 +19,7 @@ export const Auth = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     setIsLoading(true);
 
     if (!isLogin && password !== confirmPassword) {
@@ -36,19 +38,31 @@ export const Auth = () => {
 
       if (result.error) {
         setError(result.error);
+      } else if (result.data?.user && !result.data?.session) {
+        // Signup successful but email confirmation required
+        setSuccessMessage("Account created! Please check your email to confirm your account before logging in.");
+        setIsLogin(true); // Switch to login mode
       } else {
-        // Successful login/signup
+        // Successful login/signup with session
         navigate('/dashboard');
       }
     } catch (err) {
-      setError('An unexpected error occurred');
+      console.error(err);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-book-paper flex items-center justify-center p-4">
+    <div className="min-h-screen bg-book-paper flex flex-col items-center justify-center p-4 relative">
+      
+      <div className="w-full max-w-md mb-6">
+        <Link to="/" className="inline-flex items-center text-stone-500 hover:text-stone-800 transition-colors font-medium">
+            <ArrowLeft size={18} className="mr-2" /> Back to Home
+        </Link>
+      </div>
+
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-stone-100">
         <div className="flex justify-center mb-6">
           <div className="bg-stone-100 p-3 rounded-full">
@@ -64,8 +78,15 @@ export const Auth = () => {
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center">
-            <AlertCircle size={16} className="mr-2" />
-            {error}
+            <AlertCircle size={16} className="mr-2 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="mb-4 p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center">
+            <BookOpen size={16} className="mr-2 flex-shrink-0" />
+            <span>{successMessage}</span>
           </div>
         )}
 
@@ -140,6 +161,7 @@ export const Auth = () => {
             onClick={() => {
                 setIsLogin(!isLogin);
                 setError(null);
+                setSuccessMessage(null);
                 setConfirmPassword('');
                 setPassword('');
             }}
