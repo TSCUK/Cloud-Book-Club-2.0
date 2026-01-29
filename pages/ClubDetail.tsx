@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, LogIn, Lightbulb, LogOut } from 'lucide-react';
+import { BookOpen, MessageCircle, Calendar, Send, Sparkles, Book as BookIcon, LogIn, Lightbulb, LogOut, Plus, CheckCircle, Clock } from 'lucide-react';
 import { fetchContextualTopics, fetchChapterSynopsis } from '../services/contentEngine';
-import { DiscussionThread } from '../types';
+import { DiscussionThread, ClubRead } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 export const ClubDetail = () => {
@@ -17,6 +17,7 @@ export const ClubDetail = () => {
   // Local State for fetched content
   const [discussions, setDiscussions] = useState<DiscussionThread[]>([]);
   const [threadPosts, setThreadPosts] = useState<any[]>([]);
+  const [clubBooks, setClubBooks] = useState<ClubRead[]>([]);
 
   // Insight Engine States
   const [isProcessing, setIsProcessing] = useState(false);
@@ -28,12 +29,18 @@ export const ClubDetail = () => {
   const [newComment, setNewComment] = useState('');
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
 
+  // Book Management State
+  const [isAddingBook, setIsAddingBook] = useState(false);
+  const [newBookTitle, setNewBookTitle] = useState('');
+  const [newBookAuthor, setNewBookAuthor] = useState('');
+
   const club = clubs.find(c => c.club_id === numericClubId);
   
   // Effects to fetch discussions when tab changes
   useEffect(() => {
-    if (activeTab === 'discussion' && club) {
-        fetchDiscussions();
+    if (club) {
+        if (activeTab === 'discussion') fetchDiscussions();
+        if (activeTab === 'books') fetchClubBooks();
     }
   }, [activeTab, club]);
 
@@ -74,6 +81,20 @@ export const ClubDetail = () => {
     if (data) setThreadPosts(data);
   }
 
+  const fetchClubBooks = async () => {
+      const { data } = await supabase
+        .from('club_reads')
+        .select('*, books(*)')
+        .eq('club_id', club.club_id)
+        .order('start_date', { ascending: false });
+      
+      if (data) {
+          // Map nested book relation
+          const mapped = data.map((r: any) => ({ ...r, book: r.books }));
+          setClubBooks(mapped);
+      }
+  }
+
   const handlePostComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return navigate('/auth');
@@ -95,7 +116,6 @@ export const ClubDetail = () => {
 
   const handleCreateThread = async () => {
      if(!user) return;
-     // Quick implementation for demo: creates a generic thread
      const title = prompt("Enter thread title:");
      if(title) {
          const { error } = await supabase.from('discussion_threads').insert({
@@ -107,6 +127,50 @@ export const ClubDetail = () => {
          if(!error) fetchDiscussions();
      }
   }
+
+  const handleAddBook = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if(!user || !newBookTitle || !newBookAuthor) return;
+
+      // 1. Create Book
+      const { data: bookData, error: bookError } = await supabase
+        .from('books')
+        .insert({
+            title: newBookTitle,
+            author: newBookAuthor,
+            cover_image_url: `https://covers.openlibrary.org/b/title/${newBookTitle.replace(/\s+/g, '+')}-L.jpg`
+        })
+        .select()
+        .single();
+
+      if (bookData && !bookError) {
+          // 2. Add to Club Reads
+          const { error: readError } = await supabase
+            .from('club_reads')
+            .insert({
+                club_id: club.club_id,
+                book_id: bookData.book_id,
+                status: 'planned'
+            });
+          
+          if (!readError) {
+              setNewBookTitle('');
+              setNewBookAuthor('');
+              setIsAddingBook(false);
+              fetchClubBooks();
+          }
+      }
+  };
+
+  const handleStatusChange = async (readId: number, newStatus: string) => {
+      // Only simpler implementation for demo: usually restricts to admin
+      const { error } = await supabase
+        .from('club_reads')
+        .update({ status: newStatus })
+        .eq('club_read_id', readId);
+      
+      if(!error) fetchClubBooks();
+  };
 
   // AI Handlers
   const handleFetchInsights = async () => {
@@ -384,12 +448,116 @@ export const ClubDetail = () => {
           )}
 
           {activeTab === 'books' && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-stone-100 text-center py-12">
-                 <BookIcon size={48} className="mx-auto text-stone-300 mb-4" />
-                 <h3 className="text-lg font-bold text-stone-700">Future Reading List</h3>
-                 <p className="text-stone-500 max-w-md mx-auto mt-2">
-                    Members can suggest books and vote for the next month's read. This feature is coming soon!
-                 </p>
+              <div className="space-y-6">
+                 {/* Add Book Header */}
+                 <div className="flex justify-between items-center">
+                     <h2 className="font-serif text-xl font-bold text-stone-800">Reading List</h2>
+                     {user && isMember && !isAddingBook && (
+                         <button 
+                           onClick={() => setIsAddingBook(true)}
+                           className="flex items-center gap-2 bg-stone-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-stone-700"
+                         >
+                             <Plus size={16} /> Suggest Book
+                         </button>
+                     )}
+                 </div>
+
+                 {/* Add Book Form */}
+                 {isAddingBook && (
+                     <div className="bg-stone-50 p-4 rounded-xl border border-stone-200">
+                         <h3 className="font-bold text-stone-800 mb-3">Suggest a Book</h3>
+                         <form onSubmit={handleAddBook} className="space-y-3">
+                             <input 
+                                type="text" 
+                                placeholder="Book Title"
+                                required
+                                className="w-full px-3 py-2 border rounded-lg"
+                                value={newBookTitle}
+                                onChange={e => setNewBookTitle(e.target.value)}
+                             />
+                             <input 
+                                type="text" 
+                                placeholder="Author"
+                                required
+                                className="w-full px-3 py-2 border rounded-lg"
+                                value={newBookAuthor}
+                                onChange={e => setNewBookAuthor(e.target.value)}
+                             />
+                             <div className="flex gap-2 justify-end">
+                                 <button 
+                                    type="button" 
+                                    onClick={() => setIsAddingBook(false)}
+                                    className="px-3 py-1.5 text-stone-600 text-sm hover:text-stone-800"
+                                 >
+                                     Cancel
+                                 </button>
+                                 <button 
+                                    type="submit" 
+                                    className="px-3 py-1.5 bg-book-accent text-white rounded text-sm hover:bg-stone-800"
+                                 >
+                                     Add to List
+                                 </button>
+                             </div>
+                         </form>
+                     </div>
+                 )}
+
+                 {/* Book List */}
+                 <div className="space-y-4">
+                     {clubBooks.length === 0 && (
+                         <div className="text-center py-12 bg-white rounded-xl border border-stone-100">
+                            <BookIcon size={32} className="mx-auto text-stone-300 mb-2" />
+                            <p className="text-stone-500">No books in the history yet.</p>
+                         </div>
+                     )}
+
+                     {clubBooks.map(read => (
+                         <div key={read.club_read_id} className="bg-white p-4 rounded-xl shadow-sm border border-stone-100 flex gap-4">
+                             <img 
+                                src={read.book?.cover_image_url || 'https://via.placeholder.com/100'} 
+                                className="w-20 h-28 object-cover rounded shadow"
+                             />
+                             <div className="flex-1">
+                                 <div className="flex justify-between items-start">
+                                     <div>
+                                        <h3 className="font-bold text-stone-800">{read.book?.title}</h3>
+                                        <p className="text-sm text-stone-500 mb-2">{read.book?.author}</p>
+                                     </div>
+                                     <div className={`
+                                        text-xs font-bold px-2 py-1 rounded uppercase tracking-wide
+                                        ${read.status === 'reading' ? 'bg-green-100 text-green-700' : ''}
+                                        ${read.status === 'planned' ? 'bg-amber-100 text-amber-700' : ''}
+                                        ${read.status === 'completed' ? 'bg-stone-100 text-stone-500' : ''}
+                                     `}>
+                                         {read.status}
+                                     </div>
+                                 </div>
+
+                                 {/* Simple status actions for demo */}
+                                 {user && isMember && (
+                                     <div className="mt-4 flex gap-2">
+                                         {read.status === 'planned' && (
+                                             <button 
+                                                onClick={() => handleStatusChange(read.club_read_id, 'reading')}
+                                                className="text-xs flex items-center gap-1 text-green-600 hover:text-green-800 font-medium"
+                                             >
+                                                <BookOpen size={14} /> Start Reading
+                                             </button>
+                                         )}
+                                         {read.status === 'reading' && (
+                                             <button 
+                                                onClick={() => handleStatusChange(read.club_read_id, 'completed')}
+                                                className="text-xs flex items-center gap-1 text-stone-500 hover:text-stone-800 font-medium"
+                                             >
+                                                <CheckCircle size={14} /> Mark Finished
+                                             </button>
+                                         )}
+                                     </div>
+                                 )}
+                             </div>
+                         </div>
+                     ))}
+                 </div>
               </div>
           )}
         </div>
