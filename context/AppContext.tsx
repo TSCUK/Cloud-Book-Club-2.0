@@ -40,7 +40,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        await fetchUserProfile(session.user.id);
+        // Pass session.user to properly attempt auto-healing if profile is missing
+        await fetchUserProfile(session.user);
       } else {
         setLoading(false);
       }
@@ -50,8 +51,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        await fetchUserProfile(session.user.id);
+        await fetchUserProfile(session.user);
       } else {
+        // Ensure state is cleared on logout/session expiry
         setUser(null);
         setMyClubMemberships([]);
         setProgress([]);
@@ -67,16 +69,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshData();
   }, [user]);
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchUserProfile = async (authUser: any) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', authUser.id)
         .single();
 
       if (data) {
         setUser(data);
+      } else if (authUser) {
+         // SELF-HEALING: Profile missing but Auth User exists? Create it now.
+         // This fixes the "can't login" issue if the database trigger failed previously.
+         const defaultName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User';
+         const defaultAvatar = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${defaultName.replace(/\s+/g, '+')}`;
+         
+         const { data: newProfile, error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+                id: authUser.id,
+                email: authUser.email,
+                full_name: defaultName,
+                avatar_url: defaultAvatar
+            })
+            .select()
+            .single();
+        
+        if (newProfile) setUser(newProfile);
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -105,24 +125,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .eq('status', 'reading');
       
       if (readsData) {
-        // Map the nested book object to strict types if needed, or rely on loose matching
         const mappedReads = readsData.map((r: any) => ({
             ...r,
-            book: r.books // Supabase returns the relation as a property
+            book: r.books 
         }));
         setActiveClubReads(mappedReads);
       }
 
       // 3. User Specific Data
       if (user) {
-        // Memberships
         const { data: membersData } = await supabase
           .from('club_members')
           .select('*')
           .eq('user_id', user.id);
         if (membersData) setMyClubMemberships(membersData);
 
-        // Progress
         const { data: progressData } = await supabase
           .from('reading_progress')
           .select('*')
@@ -143,17 +160,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const signup = async (email: string, password: string, name: string) => {
+    // We generate the avatar URL here for the trigger to use, or the trigger will fallback
+    const avatarUrl = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${name.replace(/\s+/g, '+')}`;
+    
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name } },
+      options: { 
+          data: { 
+              full_name: name,
+              avatar_url: avatarUrl
+          } 
+      },
     });
     return { error: error?.message };
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+    try {
+        await supabase.auth.signOut();
+    } catch (e) {
+        console.error("Logout error", e);
+    } finally {
+        // ALWAYS clear local state even if server errors
+        setUser(null);
+        setMyClubMemberships([]);
+        setProgress([]);
+    }
   };
 
   const joinClub = async (clubId: number) => {
@@ -191,7 +224,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         club_read_id: clubReadId,
         user_id: user.id,
         progress_value: value,
-        progress_type: 'percentage', // Defaulting to percentage based on new logic
+        progress_type: 'percentage', 
         updated_at: new Date().toISOString()
       }, { onConflict: 'club_read_id,user_id' });
 
@@ -200,7 +233,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
        setProgress(prev => {
           const filtered = prev.filter(p => p.club_read_id !== clubReadId);
           return [...filtered, {
-              progress_id: -1, // temp
+              progress_id: -1, 
               club_read_id: clubReadId,
               user_id: user.id,
               progress_type: 'percentage',
@@ -224,8 +257,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .single();
     
     if (data && !error) {
-        // Auto join creator
         await joinClub(data.club_id);
+    } else {
+        console.error("Create club error:", error);
     }
   }
 

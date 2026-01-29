@@ -1,5 +1,4 @@
 -- 0. PROFILES (Sync with Supabase Auth)
--- Create a table for public profiles
 create table if not exists profiles (
   id uuid references auth.users on delete cascade not null primary key,
   email text,
@@ -28,17 +27,27 @@ create policy "Users can insert their own profile." on profiles
 create policy "Users can update own profile." on profiles
   for update using (auth.uid() = id);
 
--- Function to handle new user signup
+-- Function to handle new user signup with Auto-Avatar logic
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  default_avatar text;
 begin
+  -- Generate avatar URL if none provided
+  if new.raw_user_meta_data->>'avatar_url' is null or new.raw_user_meta_data->>'avatar_url' = '' then
+    default_avatar := 'https://ui-avatars.com/api/?background=c26d53&color=fff&name=' || replace(coalesce(new.raw_user_meta_data->>'full_name', 'User'), ' ', '+');
+  else
+    default_avatar := new.raw_user_meta_data->>'avatar_url';
+  end if;
+
   insert into public.profiles (id, email, full_name, avatar_url)
   values (
     new.id, 
     new.email, 
-    new.raw_user_meta_data->>'full_name', 
-    new.raw_user_meta_data->>'avatar_url'
-  );
+    coalesce(new.raw_user_meta_data->>'full_name', 'New Member'), 
+    default_avatar
+  )
+  on conflict (id) do nothing; -- Prevent crashing if profile exists
   return new;
 end;
 $$ language plpgsql security definer;
@@ -201,3 +210,33 @@ drop policy if exists "Comments are viewable by everyone" on thread_comments;
 create policy "Comments are viewable by everyone" on thread_comments for select using (true);
 drop policy if exists "Authenticated users can post comments" on thread_comments;
 create policy "Authenticated users can post comments" on thread_comments for insert with check (auth.role() = 'authenticated');
+
+
+-- --- SEED DATA (20 CLUBS) ---
+-- Insert only if table is empty to avoid duplicates
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM clubs LIMIT 1) THEN
+    INSERT INTO clubs (name, description, category, image_url, privacy) VALUES
+    ('The African Classics', 'A deep dive into the foundational texts of modern African literature, from Achebe to Wa Thiong''o.', 'Fiction', 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Lagos Bookworms', 'A community for readers in Lagos to meet, discuss, and share the joy of reading contemporary Nigerian fiction.', 'Fiction', 'https://images.unsplash.com/photo-1524578271613-d550eacf6090?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Tech Titans Read', 'Discussing the latest in technology, AI, and startup culture. Books that shape the future.', 'Non-Fiction', 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Pan-African History', 'Exploring the rich and complex history of the continent through rigorous historical texts and biographies.', 'History', 'https://images.unsplash.com/photo-1461360370896-922624d12aa1?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('The Poetry Corner', 'For lovers of verse, rhyme, and rhythm. We explore contemporary and classical poets from around the world.', 'Poetry', 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Sci-Fi & Fantasy Africa', 'Speculative fiction from an African perspective. Afrofuturism, magic realism, and beyond.', 'Fiction', 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Women in Literature', 'Celebrating the voices of women authors across genres and generations.', 'Fiction', 'https://images.unsplash.com/photo-1470549638415-0a0755be0619?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Business & Strategy', 'Sharpen your mind with the best business books on strategy, leadership, and economics.', 'Non-Fiction', 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=1000', 'private'),
+    ('The Thriller Lounge', 'Edge-of-your-seat mysteries and thrillers. Not for the faint of heart.', 'Fiction', 'https://images.unsplash.com/photo-1508163223045-1880bc36e222?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Mind & Matter', 'Books on psychology, philosophy, and understanding the human condition.', 'Science', 'https://images.unsplash.com/photo-1516979187457-637abb4f9353?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Accra Readers Circle', 'Connecting readers in Accra through shared stories and monthly meetups.', 'Fiction', 'https://images.unsplash.com/photo-1526243741027-cdbe71e72d38?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Digital Nomads Book Club', 'Books for the remote worker, the traveler, and the global citizen.', 'Non-Fiction', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('The Young Adult Hub', 'YA novels aren''t just for teens. We discuss the best in coming-of-age literature.', 'Fiction', 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Climate & Environment', 'Understanding our changing world through science and nature writing.', 'Science', 'https://images.unsplash.com/photo-1466611653911-95081537e5b7?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('The Biography Shelf', 'Lives well lived. We read one biography or memoir every month.', 'History', 'https://images.unsplash.com/photo-1535905557558-afc4877a26fc?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Nairobi Fiction', 'Exploring the literary scene of East Africa and beyond.', 'Fiction', 'https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Cookbook & Culture', 'We read cookbooks, discuss food culture, and try recipes together.', 'Non-Fiction', 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('Startup Founders', 'A closed group for founders to discuss high-growth tactics and startup journeys.', 'Non-Fiction', 'https://images.unsplash.com/photo-1559136555-930b7e47e61d?auto=format&fit=crop&q=80&w=1000', 'private'),
+    ('Modern Philosophy', 'Making sense of the modern world through the lens of contemporary philosophy.', 'Non-Fiction', 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&q=80&w=1000', 'public'),
+    ('The Late Night Readers', 'For those who read when the world sleeps. Eclectic and open-minded.', 'Fiction', 'https://images.unsplash.com/photo-1470252649378-9c29740c9fa8?auto=format&fit=crop&q=80&w=1000', 'public');
+  END IF;
+END $$;
