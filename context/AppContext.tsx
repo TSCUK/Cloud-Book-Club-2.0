@@ -71,7 +71,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     refreshData();
   }, [user]);
 
-  const fetchUserProfile = async (authUser: any) => {
+  const fetchUserProfile = async (authUser: any): Promise<Profile | null> => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -81,6 +81,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (data) {
         setUser(data);
+        return data;
       } else if (authUser) {
          // SELF-HEALING: Profile missing but Auth User exists? Create it now.
          const defaultName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User';
@@ -97,11 +98,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             .select()
             .single();
         
-        if (newProfile) setUser(newProfile);
-        if (insertError) console.error("Auto-creation of profile failed. Check DB triggers/policies.", insertError);
+        if (newProfile) {
+            setUser(newProfile);
+            return newProfile;
+        }
+        
+        if (insertError) {
+             console.error("Auto-creation of profile failed.", insertError);
+        }
       }
+      return null;
     } catch (error) {
       console.error('Error loading profile:', error);
+      return null;
     }
   };
 
@@ -162,7 +171,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       // Fix race condition: Wait for profile fetch before resolving
       if (data.session?.user) {
-          await fetchUserProfile(data.session.user);
+          const profile = await fetchUserProfile(data.session.user);
+          if (!profile) {
+              // Fail the login if we can't get the profile to avoid redirect loop
+              await supabase.auth.signOut();
+              return { error: "Login successful but profile not found. Please ensure database setup script has been run." };
+          }
       }
       
       return { data };
