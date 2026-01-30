@@ -43,13 +43,14 @@ export const Auth = () => {
         setSuccessMessage("Account created! Please check your email to confirm your account before logging in.");
         setIsLogin(true); // Switch to login mode
       } else {
-        // SUCCESS: The App.tsx Routes will redirect to /dashboard automatically
+        // SUCCESS
+        // Force navigate to dashboard to prevent any state race conditions
+        navigate('/dashboard');
       }
     } catch (err) {
       console.error("Auth submit error:", err);
       setError('An unexpected error occurred. Please try again.');
     } finally {
-      // CRITICAL: Always turn off loading, even if AbortError happens
       setIsLoading(false);
     }
   };

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Profile, Club, Book, ReadingProgress, DiscussionThread, ClubMember, ClubRead } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
@@ -22,6 +22,7 @@ interface AppContextType {
   updateProgress: (clubReadId: number, value: number) => Promise<void>;
   createClub: (club: Partial<Club>) => Promise<{ error?: string }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error?: string }>;
+  deleteAccount: () => Promise<{ error?: string }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -34,6 +35,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [myClubMemberships, setMyClubMemberships] = useState<ClubMember[]>([]);
   const [activeClubReads, setActiveClubReads] = useState<ClubRead[]>([]);
   const [progress, setProgress] = useState<ReadingProgress[]>([]);
+
+  // Ref to prevent double-fetching profile
+  const fetchingProfileRef = useRef<string | null>(null);
 
   // Load User Session
   useEffect(() => {
@@ -66,8 +70,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
          setUser(null);
          setMyClubMemberships([]);
          setProgress([]);
+         fetchingProfileRef.current = null;
+      } else if (event === 'SIGNED_IN' && session?.user) {
+         // Force fetch on explicit sign in event to ensure fresh data
+         await fetchUserProfile(session.user);
       } else if (session?.user && !user) {
-         // Only fetch if we don't have the user yet to avoid double fetching
+         // Fallback for session recovery
          await fetchUserProfile(session.user);
       }
     });
@@ -84,25 +92,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [user]);
 
   const fetchUserProfile = async (authUser: any): Promise<Profile | null> => {
+    // Prevent multiple simultaneous fetches for the same user
+    if (fetchingProfileRef.current === authUser.id) {
+        return user; 
+    }
+    fetchingProfileRef.current = authUser.id;
+
+    const defaultName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User';
+    const defaultAvatar = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(defaultName)}`;
+    
+    // Fallback object we return if DB fails or times out
+    const fallbackProfile: Profile = {
+        id: authUser.id,
+        email: authUser.email,
+        full_name: defaultName,
+        avatar_url: defaultAvatar
+    };
+
     try {
-      // 1. Try to fetch existing profile from DB
-      const { data, error } = await supabase
+      // Create a promise that rejects after 2.5 seconds
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('DB_TIMEOUT')), 2500)
+      );
+
+      // 1. Try to fetch existing profile from DB (with timeout)
+      const fetchPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .single();
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
 
       if (data && !error) {
         setUser(data);
         return data;
       }
 
-      // 2. If fetch failed, try to UPSERT (Create or Update)
-      // We use Upsert to handle race conditions with DB triggers
-      const defaultName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User';
-      const defaultAvatar = `https://ui-avatars.com/api/?background=c26d53&color=fff&name=${encodeURIComponent(defaultName)}`;
-      
-      const { data: newProfile, error: upsertError } = await supabase
+      // 2. If fetch failed (not found), try to UPSERT
+      const upsertPromise = supabase
         .from('profiles')
         .upsert({
             id: authUser.id,
@@ -113,40 +141,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
         .select()
         .single();
+
+      const { data: newProfile, error: upsertError } = await Promise.race([upsertPromise, timeoutPromise]) as any;
     
       if (newProfile && !upsertError) {
           setUser(newProfile);
           return newProfile;
       }
       
-      // 3. EMERGENCY FALLBACK: If DB interaction fails completely (RLS, Table missing, etc)
-      // We manually construct a profile object so the user can still use the app.
-      console.warn("DB Profile sync failed. Using session fallback.", upsertError || error);
-      
-      const fallbackProfile: Profile = {
-          id: authUser.id,
-          email: authUser.email,
-          full_name: defaultName,
-          avatar_url: defaultAvatar
-      };
-      
+      // 3. DB Error Fallback
+      console.warn("DB Profile sync failed/error. Using session fallback.", upsertError || error);
       setUser(fallbackProfile);
       return fallbackProfile;
 
-    } catch (error) {
-      console.error('Critical Error loading profile:', error);
-      // Even in a crash, try to set a basic user so app doesn't loop
-      if (authUser) {
-          const fallback: Profile = {
-             id: authUser.id,
-             email: authUser.email,
-             full_name: 'User',
-             avatar_url: ''
-          };
-          setUser(fallback);
-          return fallback;
-      }
-      return null;
+    } catch (error: any) {
+      console.error('Critical Error/Timeout loading profile:', error);
+      // Timeout or Network crash -> Use fallback immediately to unblock user
+      setUser(fallbackProfile);
+      return fallbackProfile;
+    } finally {
+        fetchingProfileRef.current = null;
     }
   };
 
@@ -165,7 +179,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setClubs(formattedClubs);
       }
 
-      // 2. Fetch Active Reads (Books currently being read by clubs)
+      // 2. Fetch Active Reads
       const { data: readsData } = await supabase
         .from('club_reads')
         .select('*, books(*)')
@@ -207,7 +221,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       // Successfully authenticated
       if (data.session?.user) {
-          // This will now always return a profile (either from DB or fallback)
           await fetchUserProfile(data.session.user);
       }
       
@@ -252,11 +265,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
         console.error("Logout error", e);
     } finally {
-        // ALWAYS clear local state even if server errors
         setUser(null);
         setMyClubMemberships([]);
         setProgress([]);
+        fetchingProfileRef.current = null;
     }
+  };
+
+  const deleteAccount = async () => {
+    if (!user) return { error: "No user logged in" };
+    
+    // 1. Delete profile
+    const { error } = await supabase.from('profiles').delete().eq('id', user.id);
+    
+    if (error) {
+        console.error("Error deleting profile:", error);
+        return { error: error.message };
+    }
+
+    // 2. Sign out
+    await logout();
+    return {};
   };
 
   const joinClub = async (clubId: number) => {
@@ -353,7 +382,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{ 
       user, loading, login, signup, logout, 
       clubs, myClubMemberships, activeClubReads, progress,
-      refreshData, joinClub, leaveClub, updateProgress, createClub, updateProfile
+      refreshData, joinClub, leaveClub, updateProgress, createClub, updateProfile, deleteAccount
     }}>
       {children}
     </AppContext.Provider>
