@@ -37,22 +37,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Load User Session
   useEffect(() => {
+    let mounted = true;
+
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await fetchUserProfile(session.user);
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        if (mounted && data.session?.user) {
+          await fetchUserProfile(data.session.user);
         }
-      } catch (e) {
-        console.error("Session init error:", e);
+      } catch (e: any) {
+        // Ignore AbortError which happens on fast refreshes/unmounts
+        if (e.name !== 'AbortError') {
+          console.error("Session init error:", e);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
     initSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      
       if (event === 'SIGNED_OUT') {
          setUser(null);
          setMyClubMemberships([]);
@@ -63,7 +72,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Fetch Data when User changes or on load
