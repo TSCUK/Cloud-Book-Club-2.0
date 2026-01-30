@@ -38,21 +38,18 @@ export const Auth = () => {
 
       if (result.error) {
         setError(result.error);
-        setIsLoading(false);
       } else if (result.data?.user && !result.data?.session) {
         // Signup successful but email confirmation required
         setSuccessMessage("Account created! Please check your email to confirm your account before logging in.");
         setIsLogin(true); // Switch to login mode
-        setIsLoading(false);
       } else {
-        // SUCCESS: Do NOTHING here.
-        // The App.tsx Routes will automatically redirect to /dashboard 
-        // as soon as the 'user' state updates in the context.
-        // Manually navigating here causes race conditions and loops.
+        // SUCCESS: The App.tsx Routes will redirect to /dashboard automatically
       }
     } catch (err) {
-      console.error(err);
+      console.error("Auth submit error:", err);
       setError('An unexpected error occurred. Please try again.');
+    } finally {
+      // CRITICAL: Always turn off loading, even if AbortError happens
       setIsLoading(false);
     }
   };
